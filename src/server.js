@@ -24,12 +24,12 @@ connectDB();
 
 const app = express();
 
-app.use(cors(
-    {
-        origin: "http://localhost:5173",
-        methods: ["GET", "POST"],
-    }
-));
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+);
 
 app.set("trust proxy", true);
 app.use(loggerMiddleware);
@@ -43,16 +43,17 @@ app.use("/api/leaderboard", leaderBoardRoutes);
 
 const server = createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: "http://localhost:5173",
-        methods: ["GET", "POST"],
-    },
+  cors: {
+    origin: true,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
 });
 
 io.use(socketAuth);
 
 io.on("connection", (socket) => {
-  // console.log("User connected:", socket.user.id);
+  console.log("User connected:", socket.user.id);
 
   const userId = socket.user.id;
   const roomCode = userGameMap.get(userId);
@@ -78,9 +79,38 @@ io.on("connection", (socket) => {
       // console.log(`User ${userId} reconnected to room ${roomCode}`);
     }
   }
+  socket.on("send-offer", ({ userToSignal, callerId, signal }) => {
+    io.to(userToSignal).emit("receive-offer", { signal, callerId });
+  });
 
+  socket.on("send-answer", ({ signal, callerId }) => {
+    io.to(callerId).emit("receive-answer", { signal, id: socket.id });
+  });
+
+  socket.on("send-ice-candidate", ({ targetId, candidate }) => {
+    io.to(targetId).emit("receive-ice-candidate", {
+      senderId: socket.id,
+      candidate,
+    });
+  });
+  
+socket.on("webrtc-signal", ({ targetSocketId, signal }) => {
+  io.to(targetSocketId).emit("webrtc-signal", {
+    senderSocketId: socket.id,
+    signal: signal,
+  });
+})
+  socket.on("toggle-media", ({ roomCode, isAudioMuted, isVideoMuted }) => {
+    socket.to(roomCode).emit("peer-media-toggled", {
+      socketId: socket.id,
+      isAudioMuted,
+      isVideoMuted,
+    });
+  });
+  
+  
   roomHandler(io, socket);
   matchMakingHandler(io, socket);
   gameHandler(io, socket);
 });
-server.listen(3000, () => console.log("Server running on port 3000"));
+server.listen(3000,"0.0.0.0", () => console.log("Server running on port 3000"));
